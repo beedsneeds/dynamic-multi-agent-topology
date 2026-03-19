@@ -1,0 +1,6 @@
+langsmith
+langchain
+opnai
+langchain-openai
+datasets
+python-dotenv
