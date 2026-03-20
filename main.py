@@ -44,7 +44,6 @@ def main(n_tasks: int = 3, level: int = 1, topology: str = "single"):
         }
         results.append(result)
 
-        status = "OK" if result["correct"] else "WRONG"
         print(f"Agent: '{result['agent_answer'][:50]}' | Truth: '{result['ground_truth']}'")
         print(f"Cost: ${result['cost_usd']:.4f} | Latency: {result['latency_ms']}ms\n")
 

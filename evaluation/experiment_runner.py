@@ -3,6 +3,7 @@ from langsmith import Client
 from langsmith.evaluation import evaluate
 from evaluation.gaia_loader import GAIALoader, normalize_answer
 from pipeline.stub_agent import run_pipeline
+from config.observability import init_langsmith, Projects
 
 
 # Step 1: Upload GAIA tasks to LangSmith as a reusable Dataset
@@ -135,3 +136,15 @@ def compare_topologies(topologies: list[str], dataset_name: str) -> list[dict]:
         print(f"  {r['topology']:<20} {r['accuracy']*100:>9.1f}% {r['correct']:>4}/{r['n_tasks']:<6}")
 
     return all_results
+
+
+
+if __name__ == "__main__":    
+    client = init_langsmith(Projects.BASELINE)
+    dataset_name = create_gaia_dataset(client, n_tasks=5, level=1)
+    summary = run_experiment(
+        topology="single",
+        dataset_name=dataset_name,
+        experiment_name="single-baseline",
+    )
+    print("\nFinal summary:", summary)
