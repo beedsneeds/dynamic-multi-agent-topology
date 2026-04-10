@@ -6,3 +6,4 @@ datasets
 python-dotenv
 langgraph
 wandb
+chromadb

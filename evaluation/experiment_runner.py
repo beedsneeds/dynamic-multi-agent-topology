@@ -1,4 +1,5 @@
 import time
+import wandb
 from langsmith import Client
 from langsmith.evaluation import evaluate
 from evaluation.gaia_loader import GAIALoader, normalize_answer
@@ -68,28 +69,53 @@ def gaia_exact_match_evaluator(run, example) -> dict:
 
 # Step 3: Run a single experiment
 
-def run_experiment(topology: str, dataset_name: str, experiment_name: str = None) -> dict:
+def run_experiment(topology: str, dataset_name: str, experiment_name: str = None, wandb_project: str = "multi-agent-topology") -> dict:
     """
-    Call this function for every experiment.
-    run_experiment("single", dataset_name, "baseline")
-    run_experiment("chain",  dataset_name, "chain")
-    run_experiment("chain+rag", dataset_name, "rag")
-    run_experiment("dynamic", dataset_name, "dynamic")
+    Runs the pipeline against a LangSmith dataset, scores every answer,
+    and logs per-task metrics to wandb for cross-topology comparison.
+
+    Args:
+        topology:        "single", "chain", "dynamic", etc.
+        dataset_name:    The LangSmith dataset name from create_gaia_dataset()
+        experiment_name: Label shown in both LangSmith and wandb dashboards
+        wandb_project:   wandb project name (consistent across all runs)
     """
     if experiment_name is None:
         experiment_name = f"{topology}-{int(time.time())}"
 
     print(f"\n[Experiment] '{experiment_name}' | topology='{topology}'")
 
+    wandb.init(
+        project=wandb_project,
+        name=experiment_name,
+        config={
+            "topology":    topology,
+            "dataset":     dataset_name,
+            "experiment":  experiment_name,
+        },
+        reinit=True,   # allows multiple wandb.init() calls in the same script
+    )
+
+    # Track per-task metrics to aggregate at the end
+    run_costs     = []
+    run_latencies = []
+    run_turns     = []
+
     def agent_fn(inputs: dict) -> dict:
         """LangSmith calls this once per dataset example."""
         result = run_pipeline(inputs["question"], topology=topology)
 
-        # TODO log cost and latency to wandb here
-        # wandb.log({"cost_usd": result["cost_usd"], "latency_ms": result["latency_ms"]})
+        # log each task individually to wandb
+        wandb.log({"task/cost_usd": result["cost_usd"], "task/latency_ms": result["latency_ms"], "task/agent_turns": result["agent_turns"]})
+
+        # Accumulate for summary stats
+        run_costs.append(result["cost_usd"])
+        run_latencies.append(result["latency_ms"])
+        run_turns.append(result["agent_turns"])
 
         return {"answer": result["answer"]}
 
+    # LangSmith evaluates the agent_fn against every example in the dataset using the provided evaluators
     results = evaluate(
         agent_fn,
         data=dataset_name,
@@ -100,6 +126,23 @@ def run_experiment(topology: str, dataset_name: str, experiment_name: str = None
 
     scores = [r["evaluation_results"]["results"][0].score for r in results._results]
     accuracy = sum(scores) / len(scores) if scores else 0.0
+    avg_cost = sum(run_costs) / len(run_costs) if run_costs else 0.0
+    avg_lat  = sum(run_latencies) / len(run_latencies) if run_latencies else 0.0
+    avg_turn = sum(run_turns) / len(run_turns) if run_turns else 0.0
+
+    # headline numbers that show up in the wandb comparison table
+    wandb.log({
+        "summary/accuracy":        round(accuracy, 3),
+        "summary/correct":         sum(scores),
+        "summary/n_tasks":         len(scores),
+        "summary/avg_cost_usd":    round(avg_cost, 6),
+        "summary/avg_latency_ms":  round(avg_lat, 1),
+        "summary/avg_agent_turns": round(avg_turn, 2),
+        "summary/total_cost_usd":  round(sum(run_costs), 6),
+    })
+
+    wandb.finish()
+
 
     summary = {
         "experiment": experiment_name,
@@ -107,9 +150,15 @@ def run_experiment(topology: str, dataset_name: str, experiment_name: str = None
         "accuracy":   round(accuracy, 3),
         "correct":    sum(scores),
         "n_tasks":    len(scores),
+        "avg_cost_usd":    round(avg_cost, 6),
+        "avg_latency_ms":  round(avg_lat, 1)
     }
 
     print(f"[Experiment] Accuracy: {accuracy * 100:.1f}% ({sum(scores)}/{len(scores)})")
+    print(f"[Experiment] Avg cost:  ${avg_cost:.6f} per task")
+    print(f"[Experiment] Avg time:  {avg_lat:.0f}ms per task")
+    print(f"[wandb] Run logged to project '{wandb_project}' - run '{experiment_name}'")
+
     return summary
 
 
@@ -119,6 +168,8 @@ def run_experiment(topology: str, dataset_name: str, experiment_name: str = None
 def compare_topologies(topologies: list[str], dataset_name: str) -> list[dict]:
     """
     This runs every topology against the same dataset and prints a comparison table.
+    Each topology creates one wandb run and they all appear in the same wandb
+    project which makes it easy to compare them visually in the dashboard.
 
     TODO: Call this once all topologies are implemented:
       compare_topologies(["single", "chain", "chain+rag", "dynamic"], dataset_name)
@@ -130,10 +181,10 @@ def compare_topologies(topologies: list[str], dataset_name: str) -> list[dict]:
 
     # Print comparison table
     print("\nTopology Comparison")
-    print(f"  {'Topology':<20} {'Accuracy':>10} {'Correct':>10}")
-    print(f"  {'-'*20} {'-'*10} {'-'*10}")
+    print(f"  {'Topology':<20} {'Accuracy':>10} {'Correct':>10} {'Avg Cost':>12}")
+    print(f"  {'-'*20} {'-'*10} {'-'*10} {'-'*12}")
     for r in all_results:
-        print(f"  {r['topology']:<20} {r['accuracy']*100:>9.1f}% {r['correct']:>4}/{r['n_tasks']:<6}")
+        print(f"  {r['topology']:<20} {r['accuracy']*100:>9.1f}% {r['correct']:>4}/{r['n_tasks']:<6} ${r['avg_cost_usd']:>10.6f}")
 
     return all_results
 
