@@ -1,9 +1,5 @@
-langsmith
-langchain
-openai
-langchain-openai
+langchain==1.2.15
+langchain_core==1.2.28
+langchain_openai==1.1.12
+langchain_ollama
 datasets
-python-dotenv
-langgraph
-wandb
-chromadb

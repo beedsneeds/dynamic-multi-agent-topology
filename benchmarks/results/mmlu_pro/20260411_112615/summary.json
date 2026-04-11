@@ -1,0 +1,33 @@
+{
+  "metrics": {
+    "accuracy_micro": 0.6666666666666666,
+    "accuracy_macro": 0.6666666666666666,
+    "n": 3,
+    "n_correct": 2,
+    "n_unparseable": 0,
+    "per_category": {
+      "chemistry": {
+        "accuracy": 0.0,
+        "n": 1
+      },
+      "health": {
+        "accuracy": 1.0,
+        "n": 1
+      },
+      "math": {
+        "accuracy": 1.0,
+        "n": 1
+      }
+    }
+  },
+  "config": {
+    "split": "test",
+    "n_requested": 3,
+    "n_evaluated": 3,
+    "seed": 0,
+    "agent": "agents.single_agent.answer_question",
+    "num_predict": 1024
+  },
+  "runtime_seconds": 451.6194257736206,
+  "predictions_path": "benchmarks/results/mmlu_pro/20260411_112615/predictions.jsonl"
+}

@@ -209,3 +209,4 @@ __marimo__/
 
 memory/chroma_db/
 memory/chroma_db_test/
+.langgraph_api/
