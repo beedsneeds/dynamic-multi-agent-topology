@@ -30,7 +30,7 @@ from pathlib import Path
 from datasets import load_dataset
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.common import get_planner_model
+from agents.common import get_reasoning_model
 from benchmarks.common import (
     add_common_args,
     response_text,
@@ -127,7 +127,7 @@ def run(n: int | None, split: str, seed: int, output_dir) -> dict:
     items = load_gsm_hard(split=split, n=n, seed=seed)
     print(f"[{LABEL}] {len(items)} problems", flush=True)
 
-    model = get_planner_model(num_predict=NUM_PREDICT)
+    model = get_reasoning_model(num_predict=NUM_PREDICT)
 
     def process_item(item: dict) -> dict:
         # TODO this invokes the planner directly. Not a topology
@@ -173,7 +173,7 @@ def run(n: int | None, split: str, seed: int, output_dir) -> dict:
         "n_requested": n,
         "n_evaluated": n_total,
         "seed": seed,
-        "model": "agents.common.get_planner_model()",
+        "model": "agents.common.get_reasoning_model()",
         "num_predict": NUM_PREDICT,
         "float_rel_tol": FLOAT_REL_TOL,
         "float_abs_tol": FLOAT_ABS_TOL,

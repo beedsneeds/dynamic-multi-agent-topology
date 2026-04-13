@@ -35,7 +35,7 @@ from typing import Any, Callable
 
 
 # Strip <think>...</think> blocks emitted by reasoning-tuned models
-# agents.common.get_planner_model sets reasoning=False so these should not appear
+# agents.common.get_reasoning_model sets reasoning=False so these should not appear
 THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 

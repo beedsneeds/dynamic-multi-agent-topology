@@ -36,7 +36,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.common import get_planner_model
+from agents.common import get_reasoning_model
 from benchmarks.common import (
     add_common_args,
     response_text,
@@ -178,7 +178,7 @@ def run(n: int | None, seed: int, output_dir: Path, cache_path: Path) -> dict:
         flush=True,
     )
 
-    model = get_planner_model(num_predict=NUM_PREDICT)
+    model = get_reasoning_model(num_predict=NUM_PREDICT)
 
     def process_item(item: dict) -> dict:
         response = model.invoke(
@@ -226,7 +226,7 @@ def run(n: int | None, seed: int, output_dir: Path, cache_path: Path) -> dict:
         "seed": seed,
         "source_url": SOURCE_URL,
         "cache_path": str(cache_path),
-        "model": "agents.common.get_planner_model()",
+        "model": "agents.common.get_reasoning_model()",
         "num_predict": NUM_PREDICT,
         "system_prompt": SYSTEM_PROMPT,
     }
