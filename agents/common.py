@@ -39,7 +39,7 @@ def get_reasoning_model(temperature: int = 0, num_predict: int | None = None) ->
     )
 
 
-def get_worker_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
+def get_small_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
     return ChatOllama(
         model="qwen3.5:4b",
         temperature=temperature,

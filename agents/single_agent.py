@@ -1,6 +1,6 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.common import get_planner_model
+from agents.common import get_reasoning_model
 
 SYSTEM_PROMPT = (
     "You are answering a multiple-choice question. "
@@ -20,7 +20,7 @@ def format_question(question: str, options: list[str]) -> str:
 
 def answer_question(question: str, options: list[str], num_predict: int | None = None) -> str:
     """Invoke the planner model and return the raw response text."""
-    model = get_planner_model(num_predict=num_predict)
+    model = get_reasoning_model(num_predict=num_predict)
     prompt = format_question(question, options)
     response = model.invoke(
         [
