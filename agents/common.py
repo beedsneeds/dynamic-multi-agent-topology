@@ -24,8 +24,6 @@ TERMINATION_ACTION_LIST = ["terminate"]
 # The planner model (qwen3.5:9b) is a reasoning-capable model and,
 # left on defaults, produces long <think> blocks before answering
 # — a single call takes 10+ minutes on CPU.
-# Uses model_copy so we honour whatever base model/temperature
-# agents.common currently configures.
 # num_predict caps output tokens: even with reasoning=False, a
 # CoT prompt can push the model into a 2000+ token explanation
 # that wedges a benchmark run on CPU. Cap from the call site.
