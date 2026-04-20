@@ -2,7 +2,10 @@ from typing import TypedDict, Annotated, List
 import operator
 from langchain_core.messages import BaseMessage
 from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
+from dotenv import load_dotenv
 
+load_dotenv()
 
 REASONING_ACTION_LIST = [
     "reasoning",
@@ -21,6 +24,21 @@ TERMINATION_ACTION_LIST = ["terminate"]
 # TODO implement this for loops
 
 
+def get_reasoning_model(temperature: int = 0) -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model="gemma-4-31b-it",
+        temperature=temperature,
+    )
+
+
+# its not really that much smaller
+def get_small_model(temperature: int = 0) -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model="gemma-4-26b-a4b-it",
+        temperature=temperature,
+    )
+
+
 # The planner model (qwen3.5:9b) is a reasoning-capable model and,
 # left on defaults, produces long <think> blocks before answering
 # — a single call takes 10+ minutes on CPU.
@@ -28,7 +46,7 @@ TERMINATION_ACTION_LIST = ["terminate"]
 # CoT prompt can push the model into a 2000+ token explanation
 # that wedges a benchmark run on CPU. Cap from the call site.
 # TODO try llama.cpp
-def get_reasoning_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
+def get_local_reasoning_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
     return ChatOllama(
         model="qwen3.5:9b",
         temperature=temperature,
@@ -37,7 +55,7 @@ def get_reasoning_model(temperature: int = 0, num_predict: int | None = None) ->
     )
 
 
-def get_small_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
+def get_local_small_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
     return ChatOllama(
         model="qwen3.5:4b",
         temperature=temperature,
