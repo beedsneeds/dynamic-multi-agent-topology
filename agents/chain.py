@@ -55,7 +55,7 @@ class OutputState(TypedDict):
 class Step(TypedDict):
     id: str
     task: str
-    agent: Literal["researcher", "coder", "analyst", "executor"]
+    agent: Literal["researcher", "coder", "analyst", "executor", "planner"]
     tools: list[Literal["tavily_search", "calculator"]]
     # Retained to accept the shared Planner's output verbatim, but unused
     # at execution time — chain traverses `steps` in list order.
@@ -85,6 +85,10 @@ class OverallState(InputState, OutputState):
 class WorkerInput(TypedDict):
     step: Step
     user_input: str
+    # All previously completed step outputs, in execution order. Chain
+    # ignores `depends_on` and traverses the plan linearly, so every step
+    # after the first conditions on whatever has run so far.
+    prior_outputs: NotRequired[list[StepResult]]
 
 
 def planner(state: InputState) -> Command[Literal["orchestrator"]]:
@@ -107,23 +111,28 @@ def orchestrator(
     recomputes the set of completed ids each call.
     """
     print("orchestrator invoked")
-    completed_ids = {c["id"] for c in state.get("completed_steps", [])}
+    completed = state.get("completed_steps", [])
+    completed_ids = {c["id"] for c in completed}
     for step in state["plan"]["steps"]:
         if step["id"] not in completed_ids:
-            return Command(
-                goto=[
-                    Send(
-                        step["agent"],
-                        {"step": step, "user_input": state["user_input"]},
-                    )
-                ]
-            )
+            payload: WorkerInput = {
+                "step": step,
+                "user_input": state["user_input"],
+            }
+            if completed:
+                payload["prior_outputs"] = list(completed)
+            return Command(goto=[Send(step["agent"], payload)])
     return Command(goto="synthesizer")
 
 
 def _worker_step(role: str, state: WorkerInput) -> Command[Literal["orchestrator"]]:
     step = state["step"]
-    content = run_worker_once(role, step["task"], state["user_input"])
+    content = run_worker_once(
+        role,
+        step["task"],
+        state["user_input"],
+        prior_outputs=state.get("prior_outputs"),
+    )
     result: StepResult = {"id": step["id"], "output": content}
     return Command(goto="orchestrator", update={"completed_steps": [result]})
 

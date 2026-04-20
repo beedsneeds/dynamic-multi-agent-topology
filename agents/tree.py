@@ -25,8 +25,6 @@ Run shape:
     START → planner → [worker_1, ..., worker_k in parallel] → synthesizer → END
 """
 
-from __future__ import annotations
-
 import operator
 
 from dotenv import load_dotenv
@@ -57,7 +55,7 @@ class OutputState(TypedDict):
 class Step(TypedDict):
     id: str
     task: str
-    agent: Literal["researcher", "coder", "analyst", "executor"]
+    agent: Literal["researcher", "coder", "analyst", "executor", "planner"]
     tools: list[Literal["tavily_search", "calculator"]]
     # Retained to accept the shared Planner's output verbatim. Unused at
     # execution time — every step is dispatched in one parallel wave.
@@ -100,6 +98,7 @@ def planner(
             HumanMessage(content=state["user_input"]),
         ]
     )
+    print(response)
 
     steps = response.get("steps") or []
     if not steps:
@@ -183,10 +182,10 @@ def build_graph() -> StateGraph:
     graph_builder.add_node("synthesizer", synthesizer)
 
     # Edges — every other transition is driven by Command(goto=...):
+    graph_builder.add_edge(START, "planner")
     #   planner      to  [worker_1..worker_k (Send) | synthesizer]
     #   worker       to  synthesizer       (fan-in via completed_steps reducer)
     #   synthesizer  to  END
-    graph_builder.add_edge(START, "planner")
 
     return graph_builder.compile()
 
@@ -205,8 +204,10 @@ def run(query: str, synth_suffix: str = "") -> str:
 
 
 if __name__ == "__main__":
-    prompt = (
-        "Compare how octopuses and honeybees each solve navigation, and "
-        "highlight one mechanism each uses that the other does not."
-    )
+    # prompt = (
+    #     "Compare how octopuses and honeybees each solve navigation, and "
+    #     "highlight one mechanism each uses that the other does not."
+    # )
+    prompt = "How many attempts should you make to cannulate a patient before passing the job on to a senior colleague, according to the medical knowledge of 2020?"
+
     print(run(prompt))

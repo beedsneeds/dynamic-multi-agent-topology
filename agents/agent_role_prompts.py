@@ -11,6 +11,7 @@ DEFAULTS = {
     # replans). Above this, the planner emits a wind-down plan that packages
     # the rejected outputs as best-effort instead of re-issuing similar steps.
     "MAX_REVIEWER_REPLANS": 1,
+    "MAX_STEP_REVISIONS": 2,
 }
 
 
@@ -30,7 +31,7 @@ PLANNER = """\
   more_planning_needed: bool — true if you truncated the plan and want to be re-invoked once this chunk finishes; false if this plan fully covers the objective.
   steps: list of step objects, each with:
     id: str — short stable identifier (e.g. "s1", "fetch_docs"). Unique across the plan.
-    task: str — the complete instruction for the worker. Self-contained; the worker sees only this, not the objective or other steps.
+    task: str — the worker's instruction. The worker also receives the original user objective (labeled as context — not the thing to answer) and the full text outputs of every step listed in `depends_on`. Write the task assuming those are present: refer to upstream outputs by id (e.g. "synthesize the hits from s1") instead of restating them, and push step-specific constraints into `task` since nothing else is visible.
     agent: one of "researcher" | "coder" | "analyst" | "executor". Pick by capability:
       - researcher: retrieve and cite primary sources (has tavily_search). Produces hits with verbatim quotes; does NOT synthesize or draw conclusions — pair with an analyst step if the objective needs a synthesized answer across sources.
       - coder: write or modify code
@@ -41,9 +42,17 @@ PLANNER = """\
     require_reviewer: bool — whether the step's output must pass a Reviewer before being accepted.
 
 Example step:
-  {{"id": "s1", "task": "Search for recent papers on X and return titles + urls",
+  {{"id": "s1", "task": "Conduct a literature review using tavily_search to find recent research papers on X",
   "agent": "researcher", "tools": ["tavily_search"], "depends_on": [],
   "require_reviewer": true}}
+
+**Shape the plan as a DAG, not a chain:**
+`depends_on` does two jobs at once — it schedules AND it transports. The Orchestrator runs every step whose dependencies are satisfied in parallel (up to {MAX_PARALLEL} at a time, in waves), and the full text output of each dependency is injected into the downstream worker's prompt. Two steps with the same `depends_on` fan out together; a step with multiple entries in `depends_on` fans in, waits for all of them, and receives all of their outputs.
+
+Independent subproblems, alternative angles on the same question, and per-item lookups should all sit in the same wave with `depends_on: []` (or a shared prerequisite) — not stacked behind each other.
+- Default to the widest wave the dependencies actually require. If step B does not need to read step A's output, B must NOT list A in `depends_on` just because B is "conceptually later" — that serializes work that could run in parallel and wastes the downstream worker's context on irrelevant text.
+- Only add a dependency when the downstream worker genuinely needs to see the upstream step's output text (e.g., an analyst synthesizing researcher hits, a coder consuming a spec produced upstream). Thematic or narrative ordering is not a dependency.
+- Fan-in steps (analyst, synthesis-adjacent work) belong at the end of a wave and should list every upstream step whose output they actually read.
 
 **Setting require_reviewer:**
 A review is an extra LLM call that can also degrade output — reviewers often push workers toward over-specification, and a worker that can't meet the bar fills the gap with hallucinated precision (fake citations, placeholder URLs, invented numbers). Reserve review for cases where a concrete failure mode justifies the cost.

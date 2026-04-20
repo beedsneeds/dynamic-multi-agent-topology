@@ -91,7 +91,12 @@ _EXECUTOR_NO_TOOL_NUDGE = (
 )
 
 
-def run_worker_once(role: str, task: str, user_input: str) -> str:
+def run_worker_once(
+    role: str,
+    task: str,
+    user_input: str,
+    prior_outputs: list[dict] | None = None,
+) -> str:
     """Execute one worker step and return its text output.
 
     Shared between chain and tree topologies; `agents.dynamic` inlines an
@@ -99,6 +104,11 @@ def run_worker_once(role: str, task: str, user_input: str) -> str:
     worker semantics identical across topologies — including the
     tool-call-or-retry guard for researcher/executor — means the topology
     itself is the only variable when comparing runs.
+
+    prior_outputs: optional list of {"id", "output"} dicts for steps whose
+    results this worker should condition on. Tree passes nothing (parallel
+    wave, no predecessors); chain passes everything completed so far; dynamic
+    has its own inlined path and doesn't go through this helper.
     """
     # Deferred imports: these modules are heavy and most dynamic_utils
     # callers (calculator, _worker_tools, validate_plan_deps) don't need
@@ -110,12 +120,18 @@ def run_worker_once(role: str, task: str, user_input: str) -> str:
     model = get_reasoning_model()
     system_prompt = role_prompt(role)
 
+    prior_block = ""
+    if prior_outputs:
+        rendered = "\n\n".join(f"[{p['id']}]\n{p['output']}" for p in prior_outputs)
+        prior_block = f"\n\nOutputs from prior steps your task depends on:\n{rendered}"
+
     user_messages = [
         HumanMessage(
             content=(
                 f"Original user request (for context — do not answer it directly):\n"
                 f"{user_input}\n\n"
                 f"Your specific task:\n{task}"
+                f"{prior_block}"
             )
         )
     ]
