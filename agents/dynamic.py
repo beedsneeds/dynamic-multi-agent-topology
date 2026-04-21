@@ -21,10 +21,8 @@ load_dotenv()
 
 class InputState(TypedDict):
     user_input: str
-    # Optional directive appended to the synthesizer's user message. Lets callers
-    # (e.g. benchmarks) shape the final output format without modifying the
-    # general-purpose synthesizer prompt or leaking format rules into user_input,
-    # which the planner also sees.
+    # Optional directive for final output formatting according to the benchmark's requirements
+    # without leaking context into the planner
     synth_suffix: NotRequired[str]
 
 
@@ -39,10 +37,9 @@ class Step(TypedDict):
         "researcher", "coder", "analyst", "executor", "planner"
     ]  # TODO planner too if a step is complex enough to need breaking down
     # Keep this enum in sync with _worker_tools(). Add a value only when a
-    # corresponding tool is bound for some role; the PLANNER prompt also
-    # restates the enum so the model biases toward valid names.
+    # corresponding tool is bound for some role
     tools: list[Literal["tavily_search", "calculator"]]
-    # whether a step is parallelizable or serial is determined by depends_on
+    # Whether a step is parallelizable or serial is determined by depends_on
     # If its an empty list or contains only completed items: step can execute
     depends_on: list[str]
     require_reviewer: bool
@@ -70,7 +67,6 @@ class RejectedOutput(TypedDict):
 
 
 class OverallState(InputState, OutputState):
-    # Should I manually compress this context?
     plan: PlannerOutput
     completed_steps: Annotated[list[StepResult], operator.add]
 
@@ -86,10 +82,8 @@ class OverallState(InputState, OutputState):
     # a best-effort wind-down answer instead of re-issuing similar steps.
     reviewer_rejected_outputs: Annotated[list[RejectedOutput], operator.add]
 
-    # Orchestrator-level escalations (structural or stuck)
-    plan_errors: NotRequired[list[str]]
-    # Rolling-horizon bookkeeping
-    replan_count: NotRequired[int]  # mechanical replan cap for rolling horizon
+    plan_errors: NotRequired[list[str]]  # Orchestrator-level escalations (structural or stuck)
+    replan_count: NotRequired[int]  # Mechanical replan cap for rolling horizon planning
     steward_attached: NotRequired[bool]
     steward_verdict: NotRequired[str]  # forwarded to planner on replan
 
@@ -103,7 +97,7 @@ class ReviewState(InputState):
     step: Step
     revision: NotRequired[int]
     # Carried through worker to reviewer so the reviewer can evaluate whether
-    # the new attempt addressed its prior feedback. Present only on revision > 0.
+    # the new attempt addressed its prior feedback
     prior_output: NotRequired[str]
     prior_feedback: NotRequired[str]
     # Outputs of steps listed in step["depends_on"]. The orchestrator filters
@@ -144,7 +138,7 @@ def planner(state: PlannerReview) -> Command[Literal["orchestrator", "synthesize
     reviewer_replans = state.get("reviewer_replan_count", 0) + (1 if reviewer_escalations else 0)
     max_reviewer_replans = prompts.DEFAULTS["MAX_REVIEWER_REPLANS"]
 
-    # If hard cap is reached, hand the reviewer_rejected_outputs to the synthesizer
+    # Skip to synthesizer if review-driven replan limit reached
     if reviewer_replans > max_reviewer_replans and reviewer_rejected:
         return Command(
             goto="synthesizer",
@@ -318,10 +312,7 @@ def orchestrator(
             )
         return Command(goto="synthesizer")
 
-    # Rebuild the sorted graph and determine what's ready to run next.
-    # graphlib only accepts done() on ids it has issued via get_ready(), so
-    # we walk the waves: pull ready, mark completed ones done, and stop at
-    # the first wave that surfaces pending (not-yet-completed) work.
+    # Identify the next wave of parallelizable steps using a topological sort, done() and get_ready()
     ts = TopologicalSorter(graph)
     ts.prepare()
     ready_ids: list[str] = []
@@ -386,10 +377,7 @@ def _run_worker(role: str, state: WorkerInput) -> Command:
             )
         )
     ]
-    # On revision rounds the worker needs the rejected draft AND the reviewer's
-    # feedback — feedback alone tells it what's wrong but not what to keep.
-    # Without this the worker often re-generates from scratch and re-introduces
-    # the same fabrications the reviewer just flagged.
+    # Include rejected draft and feedback on revision rounds
     prior_output = state.get("prior_output")
     feedback = state.get("feedback")
     if prior_output or feedback:
@@ -409,10 +397,7 @@ def _run_worker(role: str, state: WorkerInput) -> Command:
         agent = create_agent(model=model, tools=tools, system_prompt=system_prompt)
         agent_result = agent.invoke({"messages": user_messages})
 
-        # Researchers that produce HITS without calling tavily_search are
-        # fabricating sources from parametric memory. Retry once with an
-        # explicit correction; if the second pass still doesn't search, let
-        # the reviewer reject it.
+        # Force retry if researcher fabricates hits without searching.
         if role == "researcher" and not any(
             bool(getattr(m, "tool_calls", None)) for m in agent_result["messages"]
         ):
@@ -429,8 +414,7 @@ def _run_worker(role: str, state: WorkerInput) -> Command:
             ]
             agent_result = agent.invoke({"messages": retry_messages})
 
-        # Executors that emit an ACTIONS log without calling the calculator
-        # are hallucinating the tool's return value. Same retry pattern.
+        # Force retry if executor fabricates arithmetic results.
         if role == "executor" and not any(
             bool(getattr(m, "tool_calls", None)) for m in agent_result["messages"]
         ):
@@ -450,9 +434,6 @@ def _run_worker(role: str, state: WorkerInput) -> Command:
             agent_result = agent.invoke({"messages": retry_messages})
 
         content = agent_result["messages"][-1].content
-        # print("agent result messages 1")
-        # print(agent_result["messages"])
-        # print("agent result messages 2")
     else:
         response = model.invoke([SystemMessage(content=system_prompt), *user_messages])
         content = response.content
@@ -526,7 +507,7 @@ def reviewer(
         result: StepResult = {"id": step["id"], "output": state["output"]}
         return Command(goto="orchestrator", update={"completed_steps": [result]})
 
-    # REVISE. Cap at 2 failed reviews per step; then escalate to planner.
+    # Escalate to planner after max review revisions.
     revision = state.get("revision", 0) + 1
     if revision >= prompts.DEFAULTS["MAX_STEP_REVISIONS"]:
         rejection: RejectedOutput = {

@@ -1,11 +1,5 @@
-"""Tree topology: fan-out-fan-in baseline for topology comparisons.
+"""Parallel fan-out baseline: all steps run in one wave.
 
-The Planner (root) decomposes the objective into ≤5 steps (same prompt
-as `agents.dynamic`); every step is dispatched in parallel in a single
-superstep via `Send`; the Synthesizer integrates the merged outputs at
-the fan-in. `depends_on` from the Planner's output is intentionally
-ignored — the defining feature of this topology is that all branches
-run at once — as is `require_reviewer`, since no Reviewer node exists.
 
 Relative to `agents.dynamic`, this topology removes:
   - DAG-aware wave dispatch (single wave, all branches in parallel)
@@ -21,8 +15,6 @@ Fan-in works via the `completed_steps` reducer: each worker returns
 LangGraph merges the parallel writes across the superstep, then fires
 the Synthesizer once with the full list.
 
-Run shape:
-    START → planner → [worker_1, ..., worker_k in parallel] → synthesizer → END
 """
 
 import operator
@@ -42,9 +34,7 @@ load_dotenv()
 
 class InputState(TypedDict):
     user_input: str
-    # Optional directive appended to the Synthesizer's user message. Matches
-    # the contract in agents.dynamic so benchmark callers can swap topologies
-    # without changing how they shape the final output.
+    # Directive for final output formatting according to the benchmark's requirements
     synth_suffix: NotRequired[str]
 
 
@@ -66,8 +56,7 @@ class Step(TypedDict):
 class PlannerOutput(TypedDict):
     objective: str
     steps: list[Step]
-    # Retained for schema compatibility with the shared Planner; this
-    # topology does not re-plan, so the flag is read but ignored.
+    # Unused: no re-planning.
     more_planning_needed: bool
 
 
@@ -102,9 +91,7 @@ def planner(
 
     steps = response.get("steps") or []
     if not steps:
-        # Degenerate case: Planner returned no steps. Hand straight to
-        # Synthesizer so the graph doesn't dangle; it'll emit the
-        # "no work completed" response.
+        # Handle empty plan.
         return Command(goto="synthesizer", update={"plan": response})
 
     return Command(

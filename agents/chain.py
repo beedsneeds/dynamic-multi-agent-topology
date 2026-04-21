@@ -1,4 +1,4 @@
-"""Chain topology: linear-execution baseline for topology comparisons.
+"""Linear sequential baseline: plan once, execute in order, synthesize.
 
 The Planner decomposes the objective into ≤5 steps (same prompt as
 `agents.dynamic`), the Orchestrator dispatches them one at a time in
@@ -18,8 +18,6 @@ Same Planner, same worker role prompts, same tool bindings, same
 `synth_suffix` interface as `agents.dynamic`, so cross-topology
 benchmarks vary only in structure.
 
-Run shape:
-    START → planner → orchestrator → Send(worker) → orchestrator → ... → synthesizer → END
 """
 
 from __future__ import annotations
@@ -41,10 +39,6 @@ load_dotenv()
 
 class InputState(TypedDict):
     user_input: str
-    # Optional directive appended to the Synthesizer's user message. Matches
-    # the contract in agents.dynamic so benchmark callers can swap topologies
-    # without changing how they shape the final output (e.g. the "#### <n>"
-    # trailer the GSM-Hard runner's parser expects).
     synth_suffix: NotRequired[str]
 
 
@@ -57,8 +51,7 @@ class Step(TypedDict):
     task: str
     agent: Literal["researcher", "coder", "analyst", "executor", "planner"]
     tools: list[Literal["tavily_search", "calculator"]]
-    # Retained to accept the shared Planner's output verbatim, but unused
-    # at execution time — chain traverses `steps` in list order.
+    # Unused since traversal is linear
     depends_on: list[str]
     require_reviewer: bool
 
@@ -66,8 +59,7 @@ class Step(TypedDict):
 class PlannerOutput(TypedDict):
     objective: str
     steps: list[Step]
-    # Also retained for schema compatibility with the shared Planner;
-    # this topology does not re-plan, so the flag is read but ignored.
+    # Unused: no re-planning.
     more_planning_needed: bool
 
 
@@ -85,9 +77,7 @@ class OverallState(InputState, OutputState):
 class WorkerInput(TypedDict):
     step: Step
     user_input: str
-    # All previously completed step outputs, in execution order. Chain
-    # ignores `depends_on` and traverses the plan linearly, so every step
-    # after the first conditions on whatever has run so far.
+    # Completed outputs for conditional context.
     prior_outputs: NotRequired[list[StepResult]]
 
 
@@ -106,10 +96,7 @@ def planner(state: InputState) -> Command[Literal["orchestrator"]]:
 def orchestrator(
     state: OverallState,
 ) -> Command[Literal["researcher", "coder", "analyst", "executor", "synthesizer"]]:
-    """Dispatch the next not-yet-completed step in list order, or hand off
-    to the Synthesizer once the list is exhausted. Idempotent on re-entry:
-    recomputes the set of completed ids each call.
-    """
+    """Dispatch steps sequentially."""
     print("orchestrator invoked")
     completed = state.get("completed_steps", [])
     completed_ids = {c["id"] for c in completed}

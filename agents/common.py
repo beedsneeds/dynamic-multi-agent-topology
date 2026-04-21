@@ -25,9 +25,6 @@ TERMINATION_ACTION_LIST = ["terminate"]
 # https://docs.langchain.com/oss/python/langgraph/graph-api#accessing-and-handling-the-recursion-counter
 # TODO implement this for loops
 
-# https://docs.langchain.com/oss/python/langgraph/graph-api#accessing-and-handling-the-recursion-counter
-# TODO implement this for loops
-
 
 class TokenUsageTracker:
     """Thread-safe-ish global tracker for benchmark token utilization."""
@@ -94,13 +91,7 @@ def get_small_model(temperature: int = 0) -> ChatGoogleGenerativeAI:
     )
 
 
-# The planner model (qwen3.5:9b) is a reasoning-capable model and,
-# left on defaults, produces long <think> blocks before answering
-# — a single call takes 10+ minutes on CPU.
-# num_predict caps output tokens: even with reasoning=False, a
-# CoT prompt can push the model into a 2000+ token explanation
-# that wedges a benchmark run on CPU. Cap from the call site.
-# TODO try llama.cpp
+# Cap output tokens to prevent long <think> blocks on CPU.
 def get_local_reasoning_model(temperature: int = 0, num_predict: int | None = None) -> ChatOllama:
     return ChatOllama(
         model="qwen3.5:9b",
