@@ -3,6 +3,11 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+.vscode
+
+# benchmarking results
+/benchmarks/results/**
+
 # C extensions
 *.so
 
@@ -209,3 +214,4 @@ __marimo__/
 
 memory/chroma_db/
 memory/chroma_db_test/
+.langgraph_api/
