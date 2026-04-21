@@ -51,17 +51,26 @@ SYSTEM_PROMPT = (
     "(no units, no commas, no words)."
 )
 
-# Cap on output tokens per problem. GSM-Hard with large numbers produces verbose CoT
-# on qwen3.5:9b (step-by-step plus digit-column verification); 1024 token limit
-# truncates mid-computation and corrupts the fallback parse. 2048 is enough
-NUM_PREDICT = 2048
+# Appended to the user message when a multi-agent topology's synthesizer
+# produces the final answer, so extract_number's ANSWER_RE matches the
+# GSM8K-canonical '#### <number>' trailer instead of falling back to the
+# last bare number in synthesizer prose (e.g. the "16" in "multiplying by 16").
+SYNTH_SUFFIX = (
+    "This is a math question. End your response with a single line in EXACTLY "
+    "this format, with no other text on the line and nothing after it:\n"
+    "#### <number>\n"
+    "where <number> is the final numeric answer as a plain number — no commas, "
+    "no thousands separators, no units, no currency symbols, no trailing prose. "
+    "Example: `#### 134367812.54`"
+)
 
-# Tolerance for float equality. GSM-Hard targets are usually integers
-# stored as floats, but chained operations can introduce tiny rounding
-# errors. 1e-3 relative is loose enough to catch those without
-# admitting genuinely wrong answers (a 0.1% error on any nontrivial
-# GSM problem is still a miss).
-FLOAT_REL_TOL = 1e-3
+
+# Tolerance for float equality on non-integer targets. Integer-valued
+# targets go through a separate truncation match in is_correct because
+# GSM-Hard stores answers from Python solutions that cast the final
+# result to int, discarding fractional remainders the true computation
+# produces (e.g. target 134367812.0 for a true answer of 134367812.5437).
+FLOAT_REL_TOL = 1e-9
 FLOAT_ABS_TOL = 1e-6
 
 
@@ -78,10 +87,19 @@ def extract_number(response: str) -> float | None:
       2. Fall back to the last bare number anywhere in the response.
       3. Return None if nothing parseable is found.
     """
-    # Match "Answer: <number>". Accepts: a leading '$' (for dollar-format answers),
-    # commas inside the digits (stripped before float conversion),
-    # markdown bolding like '**Answer:** 42' and an optional sign
-    ANSWER_RE = re.compile(r"answer\s*[:\-]?\s*\**\s*\$?\s*(-?[\d,]+(?:\.\d+)?)", re.IGNORECASE)
+    # TODO this is updated to ####
+    # Match either:
+    #   - "Answer: <number>" (baseline SYSTEM_PROMPT format), with optional '$',
+    #     commas in digits, markdown bolding, and up to ~200 chars of
+    #     intervening prose (lazy, excludes digits/$/- so it can't swallow the
+    #     number it's meant to precede), or
+    #   - "#### <number>" (GSM8K-canonical trailer, emitted by the dynamic
+    #     synthesizer via synth_suffix).
+    # matches[-1] takes the last match, so if both appear the trailer wins.
+    ANSWER_RE = re.compile(
+        r"(?:####\s*\$?|answer\s*[:\-]?[^\d$\-]{0,200}?\$?\s*)(-?[\d,]+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
 
     # Fallback: any standalone number anywhere in the response. Used only
     # when no explicit 'Answer:' tag is present. Models that omit the tag
@@ -112,6 +130,8 @@ def is_correct(pred: float | None, target: float) -> bool:
         return False
     if pred == target:
         return True
+    if target.is_integer() and int(pred) == int(target):
+        return True
     diff = abs(pred - target)
     return diff <= max(FLOAT_ABS_TOL, FLOAT_REL_TOL * max(abs(target), 1.0))
 
@@ -127,7 +147,7 @@ def run(n: int | None, split: str, seed: int, output_dir) -> dict:
     items = load_gsm_hard(split=split, n=n, seed=seed)
     print(f"[{LABEL}] {len(items)} problems", flush=True)
 
-    model = get_reasoning_model(num_predict=NUM_PREDICT)
+    model = get_reasoning_model()
 
     def process_item(item: dict) -> dict:
         # TODO this invokes the planner directly. Not a topology
@@ -174,7 +194,6 @@ def run(n: int | None, split: str, seed: int, output_dir) -> dict:
         "n_evaluated": n_total,
         "seed": seed,
         "model": "agents.common.get_reasoning_model()",
-        "num_predict": NUM_PREDICT,
         "float_rel_tol": FLOAT_REL_TOL,
         "float_abs_tol": FLOAT_ABS_TOL,
         "system_prompt": SYSTEM_PROMPT,

@@ -45,9 +45,11 @@ from benchmarks.common import (
 LABEL = "mmlu-pro"
 BENCHMARK_NAME = "mmlu_pro"
 
-# Cap on output tokens per question. MMLU-Pro with visible CoT
-# typically produces 200-500 tokens; 1024 is enough headroom
-NUM_PREDICT = 1024
+SYSTEM_PROMPT = (
+    "You are answering a multiple-choice question. "
+    "Reason step by step, then end your response with exactly: 'Answer: X' "
+    "where X is one of the option letters shown below."
+)
 
 
 def extract_letter(response: str, valid_letters: str) -> str | None:
@@ -133,7 +135,11 @@ def run(n: int, split: str, seed: int, output_dir) -> dict:
     def process_item(item: dict) -> dict:
         valid_letters = "ABCDEFGHIJ"[: len(item["options"])]
         raw = response_text(
-            answer_question(item["question"], item["options"], num_predict=NUM_PREDICT)
+            answer_question(
+                item["question"],
+                item["options"],
+                system_prompt=SYSTEM_PROMPT,
+            )
         )
         prediction = extract_letter(raw, valid_letters)
         return {
@@ -165,7 +171,7 @@ def run(n: int, split: str, seed: int, output_dir) -> dict:
         "n_evaluated": len(items),
         "seed": seed,
         "agent": "agents.single_agent.answer_question",
-        "num_predict": NUM_PREDICT,
+        "system_prompt": SYSTEM_PROMPT,
     }
     return write_summary(
         output_dir=output_dir,

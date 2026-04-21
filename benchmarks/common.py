@@ -44,13 +44,26 @@ def strip_think_blocks(text: str) -> str:
 
 
 def response_text(value: Any) -> str:
-    """Handles three inputs to return plain text for benchmark parsers:
-    - a LangChain message/response with a ``.content`` attribute
-    - a raw string (already-extracted content)
-    - a list of content blocks (stringified via ``str()``)
+    """Return plain text from a LangChain message, raw string, or content-block list.
+
+    For block lists, concatenate the ``text`` fields of text-type blocks and
+    drop thinking/reasoning blocks. ``str(list)`` would embed Python repr
+    (single-quoted dicts, ``\\n`` escaped as two chars) and corrupt any JSON
+    the caller tries to parse out of the result.
     """
     content = getattr(value, "content", value)
-    return content if isinstance(content, str) else str(content)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content)
 
 
 def shuffle_and_truncate(items: list[dict], seed: int, n: int | None) -> list[dict]:
